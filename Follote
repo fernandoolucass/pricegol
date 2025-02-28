@@ -1,0 +1,54 @@
+from flask import Flask, request
+from twilio.twiml.messaging_response import MessagingResponse
+import requests
+import time
+import threading
+
+app = Flask(__name__)
+
+gold_price_per_gram_usd = 0.0
+usd_to_brl = 5.8001
+usd_to_gyd = 209.8518
+
+def update_gold_price():
+    global gold_price_per_gram_usd
+    while True:
+        try:
+            response = requests.get("https://api.metals.live/v1/spot")
+            data = response.json()
+            gold_price_per_ounce = next(item['gold'] for item in data if 'gold' in item)
+            grams_per_ounce = 31.1035
+            gold_price_per_gram_usd = gold_price_per_ounce / grams_per_ounce
+        except Exception as e:
+            print(f"Erro ao atualizar preço do ouro: {e}")
+        time.sleep(60)  # Atualiza a cada 1 minuto
+
+# Iniciar a thread de atualização de preço
+threading.Thread(target=update_gold_price, daemon=True).start()
+
+def gold_price():
+    gold_price_per_gram_brl = gold_price_per_gram_usd * usd_to_brl
+    gold_price_per_gram_gyd = gold_price_per_gram_usd * usd_to_gyd
+
+    return (
+        f"\U0001F4B0 Preço do Ouro por Grama (Atualizado):\n"
+        f"- USD: ${gold_price_per_gram_usd:.2f}\n"
+        f"- BRL: R$ {gold_price_per_gram_brl:.2f}\n"
+        f"- GYD: G$ {gold_price_per_gram_gyd:.2f}"
+    )
+
+@app.route("/whatsapp", methods=['POST'])
+def whatsapp_reply():
+    incoming_msg = request.values.get('Body', '').lower()
+    resp = MessagingResponse()
+    msg = resp.message()
+
+    if "ouro" in incoming_msg:
+        msg.body(gold_price())
+    else:
+        msg.body("Digite 'ouro' para receber o preço atualizado do ouro. \U0001F4B0")
+
+    return str(resp)
+
+if __name__ == "__main__":
+    app.run(port=5000, debug=True)
